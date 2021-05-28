@@ -19,8 +19,6 @@
 #include <errno.h>
 #include <arpa/inet.h>
 
-#include "client.h"
-
 #define FYI 0x01
 #define MYM 0x02
 #define END 0x03
