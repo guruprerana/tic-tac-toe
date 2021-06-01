@@ -31,13 +31,18 @@
 #define MAX_LINE_LEN 1000
 #define MAX_THREADS 2
 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t state_change = PTHREAD_COND_INITIALIZER;
-
+/*
+ * We use the following state variables:
+ * 1. The addresses of the two players in ex_addr, oh_addr
+ * 2. The number of active game requests being processed at the same time
+ * 3. The grid of the game in positions
+ * 4. The next player who will play
+ * 
+ * Initially, when the game has not started yet, the addresses point to NULL, 
+ * the grid is empty and next_player is 0
+ */
 struct sockaddr *ex_addr = NULL, *oh_addr = NULL;
 unsigned int ex_addr_len = sizeof(struct sockaddr), oh_addr_len = sizeof(struct sockaddr);
-pthread_mutex_t addr_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t player_change = PTHREAD_COND_INITIALIZER;
 
 int active_requests = 0;
 pthread_mutex_t active_requests_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -54,6 +59,9 @@ int next_player = 0;
 
 int sockfd;
 
+/*
+ * A struct to pass arguments to a thread
+ */
 struct process_request_args {
     char *recv_buf;
     struct sockaddr *recv_addr; 
@@ -62,6 +70,11 @@ struct process_request_args {
     pthread_t previous_game_thread;
 };
 
+/*
+ * We use two thread functions:
+ * 1. To process new clients trying to join
+ * 2. To process MOV requests from clients
+ */
 void *process_player_request(void *args_void);
 void *process_game_request(void *args_void);
 int check_winner();
@@ -98,7 +111,7 @@ int main(int argc, char *argv[]) {
 
     while (1) {
         while (active_requests >= MAX_THREADS) {
-        // while we are at max capacity, we need to wait
+        // while we are at max capacity of threads, we need to wait
             pthread_cond_wait(&active_requests_change, &active_requests_mutex);
         }
 
@@ -116,6 +129,7 @@ int main(int argc, char *argv[]) {
 
         pthread_t thread;
 
+        // create new thread based on type of request, either new client or MOV
         switch (args->recv_buf[0]) {
             case TXT:
                 if (pthread_create(&thread, NULL, process_player_request, (void *) args)) {
@@ -137,6 +151,7 @@ int main(int argc, char *argv[]) {
         }
 
         pthread_mutex_lock(&active_requests_mutex);
+        // increment number of acive requests being processed
         active_requests++;
         pthread_mutex_unlock(&active_requests_mutex);
     }
@@ -167,6 +182,7 @@ void *process_player_request(void *args_void) {
 
             next_player = 1;
 
+            // start game by sending game info and asking for next move
             send_fyi();
             send_mym();
             // start the game 
